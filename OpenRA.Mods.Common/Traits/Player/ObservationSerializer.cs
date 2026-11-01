@@ -54,6 +54,11 @@ namespace OpenRA.Mods.Common.Traits
 
 		public RLProto.GameObservation Serialize(int tick)
 		{
+			return Serialize(tick, true);
+		}
+
+		public RLProto.GameObservation Serialize(int tick, bool includeSpatial)
+		{
 			var obs = new RLProto.GameObservation
 			{
 				Tick = tick,
@@ -74,7 +79,8 @@ namespace OpenRA.Mods.Common.Traits
 			SerializeOwnedActors(obs);
 			SerializeVisibleEnemies(obs);
 			SerializeProduction(obs);
-			SerializeSpatialMap(obs);
+			if (includeSpatial)
+				SerializeSpatialMap(obs);
 
 			return obs;
 		}
@@ -89,6 +95,8 @@ namespace OpenRA.Mods.Common.Traits
 				economy.Cash = resources.Cash;
 				economy.Ore = resources.Resources;
 				economy.ResourceCapacity = resources.ResourceCapacity;
+				economy.Earned = resources.Earned;
+				economy.Spent = resources.Spent;
 			}
 
 			var power = player.PlayerActor.TraitOrDefault<PowerManager>();

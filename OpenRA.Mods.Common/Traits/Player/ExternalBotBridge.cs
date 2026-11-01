@@ -10,7 +10,6 @@
 #endregion
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -47,6 +46,9 @@ namespace OpenRA.Mods.Common.Traits
 			"1 = every tick, 10 = every 10th tick.")]
 		public readonly int ObservationInterval = 1;
 
+		[Desc("Realtime arena mode: no fast-forward, start gate via StartMatch, no exit on disconnect. Single-session only.")]
+		public readonly bool Realtime = false;
+
 		string IBotInfo.Type => Type;
 		string IBotInfo.Name => Name;
 
@@ -62,7 +64,16 @@ namespace OpenRA.Mods.Common.Traits
 		/// coexist in one process, each identified by its session/episode ID.
 		/// In single-session (legacy) mode, there's exactly one entry.
 		/// </summary>
-		internal static readonly ConcurrentDictionary<string, ExternalBotBridge> Sessions = new();
+		internal static readonly RLBridgeRegistry<ExternalBotBridge> Registry = new();
+
+		/// <summary>All bridges in a single-session process share one session id.</summary>
+		internal static readonly string SingleSessionId = Guid.NewGuid().ToString("N")[..12];
+
+		/// <summary>
+		/// When true, every external bot in this process uses the realtime start gate
+		/// even if its yaml Realtime flag is false. Set from Launch.Realtime.
+		/// </summary>
+		public static bool ForceRealtime;
 
 		/// <summary>
 		/// True when running in multi-session mode (RLSessionManager manages lifecycle).
@@ -106,10 +117,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		readonly Channel<RLProto.AgentAction> actionChannel =
 			Channel.CreateBounded<RLProto.AgentAction>(
-				new BoundedChannelOptions(16)
+				new BoundedChannelOptions(256)
 				{
 					FullMode = BoundedChannelFullMode.DropOldest,
-					SingleWriter = true,
+					SingleWriter = false,
 					SingleReader = true,
 				});
 
@@ -176,6 +187,13 @@ namespace OpenRA.Mods.Common.Traits
 		/// <summary>Session/episode ID used as the routing key for gRPC calls.</summary>
 		public string SessionId { get; }
 
+		/// <summary>Owning player's internal name (e.g. "Multi0"); empty before Activate.</summary>
+		public string PlayerName => player?.InternalName ?? "";
+
+		public bool IsRealtime => info.Realtime || ForceRealtime;
+
+		WinState lastWinState = WinState.Undefined;
+
 		public ExternalBotBridge(ExternalBotBridgeInfo info, ActorInitializer init)
 		{
 			this.info = info;
@@ -185,8 +203,10 @@ namespace OpenRA.Mods.Common.Traits
 			// registers under the correct ID for gRPC routing from the start.
 			if (MultiSessionMode && !string.IsNullOrEmpty(NextSessionId))
 				SessionId = NextSessionId;
-			else
+			else if (MultiSessionMode)
 				SessionId = Guid.NewGuid().ToString("N")[..12];
+			else
+				SessionId = SingleSessionId;
 		}
 
 		void INotifyCreated.Created(Actor self)
@@ -247,16 +267,32 @@ namespace OpenRA.Mods.Common.Traits
 			if (p.World.IsReplay)
 				return;
 
-			IsEnabled = true;
 			player = p;
 			observationSerializer = new ObservationSerializer(world, player, SessionId);
-			actionHandler = new ActionHandler(world, player);
+			actionHandler = new ActionHandler(world, player) { Realtime = IsRealtime };
+			IsEnabled = true;
 
 			// Register in the session registry
-			Sessions[SessionId] = this;
+			Registry.Register(SessionId, p.InternalName, this);
 
-			// Pause game until RL agent connects (gives LLM time to plan)
-			if (MultiSessionMode)
+			// Pause game until RL agent connects (gives LLM time to plan),
+			// or until StartMatch in realtime mode.
+			if (IsRealtime)
+			{
+				if (MultiSessionMode)
+					throw new InvalidOperationException("Realtime external bots require single-session mode");
+
+				// One pause order for the whole match. Later bots must not queue more,
+				// or they would re-pause the game after StartMatch.
+				if (!world.Paused)
+				{
+					world.SetLocalPauseState(true);
+					world.SetPauseState(true);
+				}
+
+				RLArenaMatch.Attach(world);
+			}
+			else if (MultiSessionMode)
 			{
 				// In multi-session mode, use SetLocalPauseState to avoid queuing
 				// a PauseGame Order that would re-pause during the first tick.
@@ -296,7 +332,7 @@ namespace OpenRA.Mods.Common.Traits
 		/// </summary>
 		internal void Deactivate()
 		{
-			Sessions.TryRemove(SessionId, out _);
+			Registry.Remove(SessionId, PlayerName);
 			SessionDone.Set();
 			TickRequested.Set(); // Wake tick loop so it can exit
 
@@ -317,6 +353,14 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			if (!IsEnabled || self.World.IsLoadingGameSave)
 				return;
+
+			if (IsRealtime && player.WinState != lastWinState)
+			{
+				lastWinState = player.WinState;
+				if (player.WinState != WinState.Undefined)
+					RLEventLog.Emit(world.WorldTick, player.WinState == WinState.Won ? "player_won" : "player_lost",
+						("player", player.InternalName));
+			}
 
 			// Detect game over in Tick (IGameOver.GameOver doesn't fire on Player traits)
 			if (!gameOverHandled && world.IsGameOver)
@@ -346,7 +390,12 @@ namespace OpenRA.Mods.Common.Traits
 					world.SetTickScale(1.0f);
 				}
 
-				if (MultiSessionMode)
+				if (IsRealtime)
+				{
+					// Coordinator reads final state, then calls EndMatch (which exits).
+					RLArenaMatch.OnGameOver(world);
+				}
+				else if (MultiSessionMode)
 				{
 					// In multi-session mode, just deactivate — don't exit the process
 					Deactivate();
@@ -541,6 +590,13 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			agentConnected = true;
 
+			// Realtime matches stay paused until StartMatch. A single agent must not release the gate.
+			if (IsRealtime)
+			{
+				Log.Write("rl-bridge", $"RL agent connected to {PlayerName} — start gate still holds the clock");
+				return;
+			}
+
 			// Use SetLocalPauseState for immediate effect — SetPauseState issues an Order
 			// which requires the game loop to process it, but Tick() doesn't run while
 			// Paused is true, creating a deadlock for custom maps where loading is slow.
@@ -555,6 +611,12 @@ namespace OpenRA.Mods.Common.Traits
 		internal void OnAgentDisconnected()
 		{
 			agentConnected = false;
+
+			if (IsRealtime)
+			{
+				Log.Write("rl-bridge", $"RL agent disconnected from {PlayerName}; realtime match keeps running");
+				return;
+			}
 
 			if (MultiSessionMode)
 			{
@@ -979,23 +1041,66 @@ namespace OpenRA.Mods.Common.Traits
 			};
 		}
 
+		/// <summary>Queue commands from IssueCommands (any thread). Returns the number accepted.</summary>
+		internal int EnqueueCommands(IEnumerable<RLProto.Command> commands)
+		{
+			if (IsRealtime && RLArenaMatch.IsTakenOver(PlayerName))
+			{
+				foreach (var c in commands)
+					RLEventLog.CommandRejected(world.WorldTick, PlayerName, c.Action.ToString(), c.ActorId, "taken_over");
+
+				return 0;
+			}
+
+			var action = new RLProto.AgentAction();
+			foreach (var c in commands)
+			{
+				if (IsRealtime && c.Action == RLProto.ActionType.FastAdvance)
+				{
+					RLEventLog.CommandRejected(world.WorldTick, PlayerName, c.Action.ToString(), c.ActorId, "unsupported_action");
+					continue;
+				}
+
+				action.Commands.Add(c);
+			}
+
+			if (action.Commands.Count == 0)
+				return 0;
+
+			return actionChannel.Writer.TryWrite(action) ? action.Commands.Count : 0;
+		}
+
+		/// <summary>Serialize an observation on the game thread (works while paused).</summary>
+		internal Task<RLProto.GameObservation> ObserveAsync(bool includeSpatial, CancellationToken ct)
+		{
+			var tcs = new TaskCompletionSource<RLProto.GameObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+			ct.Register(() => tcs.TrySetCanceled());
+			Game.RunAfterTick(() =>
+			{
+				try
+				{
+					tcs.TrySetResult(observationSerializer.Serialize(world.WorldTick, includeSpatial));
+				}
+				catch (Exception e)
+				{
+					tcs.TrySetException(e);
+				}
+			});
+			return tcs.Task;
+		}
+
+		internal static RLLookupStatus LookupSession(string sessionId, string playerName, out ExternalBotBridge bridge)
+		{
+			return Registry.TryLookup(sessionId, playerName, out bridge);
+		}
+
 		/// <summary>
-		/// Look up a session by ID. If sessionId is empty, returns the first (only) session
+		/// Look up a session by ID. If sessionId is empty, returns the only bridge
 		/// for backward compatibility with single-session mode.
 		/// </summary>
 		internal static ExternalBotBridge LookupSession(string sessionId)
 		{
-			if (!string.IsNullOrEmpty(sessionId))
-			{
-				Sessions.TryGetValue(sessionId, out var bridge);
-				return bridge;
-			}
-
-			// Legacy fallback: return first available session
-			foreach (var kvp in Sessions)
-				return kvp.Value;
-
-			return null;
+			return Registry.TryLookup(sessionId, "", out var bridge) == RLLookupStatus.Found ? bridge : null;
 		}
 	}
 }

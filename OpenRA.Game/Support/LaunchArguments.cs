@@ -37,6 +37,9 @@ namespace OpenRA
 		[Desc("Start in multi-session RL mode. A single process hosts multiple concurrent game sessions via gRPC.")]
 		public string MultiSession;
 
+		[Desc("Force realtime arena mode for every external bot: shared clock, start gate, no per-agent FastAdvance or pause.")]
+		public bool Realtime;
+
 		public LaunchArguments(Arguments args)
 		{
 			if (args == null)

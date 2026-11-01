@@ -48,6 +48,7 @@ namespace OpenRA.Mods.Common.LoadScreens
 		public virtual void StartGame(Arguments args)
 		{
 			Launch = new LaunchArguments(args);
+			ExternalBotBridge.ForceRealtime = Launch.Realtime;
 			Ui.ResetAll();
 			Game.Settings.Save();
 

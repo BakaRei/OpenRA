@@ -218,6 +218,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		void INotifyKilled.Killed(Actor self, AttackInfo e)
 		{
+			RLEventLog.OnKilled(self, e, cost);
 			if (self.Owner.WinState != WinState.Undefined)
 				return;
 

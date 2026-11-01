@@ -30,31 +30,22 @@ namespace OpenRA.Mods.Common.Traits
 		/// In multi-session mode with session_id, looks up immediately.
 		/// In single-session mode, polls until the bridge activates (up to 60s).
 		/// </summary>
-		static async Task<ExternalBotBridge> WaitForBridge(string sessionId, CancellationToken ct)
+		static async Task<ExternalBotBridge> WaitForBridge(string sessionId, string player, CancellationToken ct)
 		{
-			// In multi-session mode with a specific session_id, look up directly
-			if (!string.IsNullOrEmpty(sessionId))
+			var attempts = string.IsNullOrEmpty(sessionId) ? 600 : 3000;
+			for (var i = 0; i < attempts; i++)
 			{
-				// Session should already exist (created by CreateSession RPC)
-				// CreateSession now blocks until ready, but keep a generous timeout
-				for (var i = 0; i < 3000; i++)
-				{
-					var b = ExternalBotBridge.LookupSession(sessionId);
-					if (b != null && b.IsEnabled)
-						return b;
+				var status = ExternalBotBridge.LookupSession(sessionId, player, out var b);
+				if (status == RLLookupStatus.Ambiguous)
+					throw new RpcException(new Status(StatusCode.InvalidArgument,
+						"player required: session has players " + string.Join(",", ExternalBotBridge.Registry.Players(sessionId))));
 
-					await Task.Delay(100, ct);
-				}
+				// An unknown player in a populated session is a caller error; give activation 5s first.
+				if (status == RLLookupStatus.NoPlayer && i >= 50)
+					throw new RpcException(new Status(StatusCode.NotFound, $"no bridge for player '{player}'"));
 
-				return null;
-			}
-
-			// Legacy single-session mode: wait for any bridge to activate
-			for (var i = 0; i < 600; i++)
-			{
-				var bridge = ExternalBotBridge.LookupSession("");
-				if (bridge != null && bridge.IsEnabled)
-					return bridge;
+				if (status == RLLookupStatus.Found && b.IsEnabled)
+					return b;
 
 				await Task.Delay(100, ct);
 			}
@@ -71,13 +62,17 @@ namespace OpenRA.Mods.Common.Traits
 			ServerCallContext context)
 		{
 			// For streaming, we don't have session_id upfront — use legacy lookup
-			var bridge = await WaitForBridge("", context.CancellationToken);
+			var bridge = await WaitForBridge("", "", context.CancellationToken);
 
 			if (bridge == null)
 			{
 				Log.Write("rl-bridge", "GameSession rejected: bridge not activated within 60s timeout");
 				return;
 			}
+
+			if (bridge.IsRealtime)
+				throw new RpcException(new Status(StatusCode.FailedPrecondition,
+					"GameSession is not available in realtime mode; use Observe/IssueCommands"));
 
 			bridge.OnAgentConnected();
 			Log.Write("rl-bridge", $"GameSession started for session {bridge.SessionId}");
@@ -138,11 +133,15 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			try
 			{
-				var bridge = await WaitForBridge(request.SessionId, context.CancellationToken);
+				var bridge = await WaitForBridge(request.SessionId, request.Player, context.CancellationToken);
 
 				if (bridge == null)
 					throw new RpcException(new Status(StatusCode.Unavailable,
 						$"Bridge not activated within 300s (session_id={request.SessionId})"));
+
+				if (bridge.IsRealtime)
+					throw new RpcException(new Status(StatusCode.FailedPrecondition,
+						"FastAdvance is disabled in realtime arena mode"));
 
 				return await bridge.RequestFastAdvance(
 					request.Ticks, request.Commands, context.CancellationToken,
@@ -167,7 +166,7 @@ namespace OpenRA.Mods.Common.Traits
 			RLProto.StateRequest request,
 			ServerCallContext context)
 		{
-			var bridge = ExternalBotBridge.LookupSession(request.SessionId);
+			ExternalBotBridge.LookupSession(request.SessionId, request.Player, out var bridge);
 			if (bridge == null)
 			{
 				return Task.FromResult(new RLProto.GameState
@@ -215,6 +214,58 @@ namespace OpenRA.Mods.Common.Traits
 			catch (Exception e) { Log.Write("rl-bridge", $"DestroySession error: {e}"); }
 
 			return Task.FromResult(new RLProto.DestroySessionResponse());
+		}
+
+		static async Task<ExternalBotBridge> RequireRealtimeBridge(string sessionId, string player, CancellationToken ct)
+		{
+			if (string.IsNullOrEmpty(player))
+				throw new RpcException(new Status(StatusCode.InvalidArgument, "player required"));
+
+			var bridge = await WaitForBridge(sessionId, player, ct);
+			if (bridge == null)
+				throw new RpcException(new Status(StatusCode.Unavailable, $"bridge for {player} not active"));
+
+			if (!bridge.IsRealtime)
+				throw new RpcException(new Status(StatusCode.FailedPrecondition,
+					"Observe/IssueCommands require realtime mode (arena-agent or Launch.Realtime)"));
+
+			return bridge;
+		}
+
+		public override async Task<RLProto.GameObservation> Observe(RLProto.ObserveRequest request, ServerCallContext context)
+		{
+			var bridge = await RequireRealtimeBridge(request.SessionId, request.Player, context.CancellationToken);
+			return await bridge.ObserveAsync(request.IncludeSpatial, context.CancellationToken);
+		}
+
+		public override async Task<RLProto.IssueCommandsResponse> IssueCommands(RLProto.IssueCommandsRequest request, ServerCallContext context)
+		{
+			var bridge = await RequireRealtimeBridge(request.SessionId, request.Player, context.CancellationToken);
+			var queued = bridge.EnqueueCommands(request.Commands);
+			return new RLProto.IssueCommandsResponse { Queued = queued, Tick = RLArenaMatch.World?.WorldTick ?? 0 };
+		}
+
+		public override Task<RLProto.ListPlayersResponse> ListPlayers(RLProto.ListPlayersRequest request, ServerCallContext context)
+		{
+			return RLArenaMatch.ListPlayersAsync();
+		}
+
+		public override Task<RLProto.MatchControlResponse> StartMatch(RLProto.StartMatchRequest request, ServerCallContext context)
+		{
+			return RLArenaMatch.StartAsync();
+		}
+
+		public override Task<RLProto.MatchControlResponse> EndMatch(RLProto.EndMatchRequest request, ServerCallContext context)
+		{
+			return RLArenaMatch.EndAsync(request.Reason);
+		}
+
+		public override Task<RLProto.MatchControlResponse> SetTakeover(RLProto.SetTakeoverRequest request, ServerCallContext context)
+		{
+			if (string.IsNullOrEmpty(request.Player))
+				throw new RpcException(new Status(StatusCode.InvalidArgument, "player required"));
+
+			return RLArenaMatch.SetTakeoverAsync(request.Player, request.Enabled);
 		}
 	}
 }

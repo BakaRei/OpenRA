@@ -22,6 +22,15 @@ service RLBridge {
   // Session management (multi-session mode)
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
+
+  // Arena (realtime multi-player, single-session). SetTakeover is declared here
+  // and implemented with the built-in AI handover.
+  rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
+  rpc Observe(ObserveRequest) returns (GameObservation);
+  rpc IssueCommands(IssueCommandsRequest) returns (IssueCommandsResponse);
+  rpc StartMatch(StartMatchRequest) returns (MatchControlResponse);
+  rpc EndMatch(EndMatchRequest) returns (MatchControlResponse);
+  rpc SetTakeover(SetTakeoverRequest) returns (MatchControlResponse);
 }
 
 // ─── Observations (Game → Agent) ────────────────────────────────────────────
@@ -72,6 +81,8 @@ message RlEconomy {
   int32 power_drained = 4;
   int32 resource_capacity = 5;
   int32 harvester_count = 6;
+  int32 earned = 7;   // PlayerResources.Earned (cumulative income)
+  int32 spent = 8;    // PlayerResources.Spent
 }
 
 message RlMilitary {
@@ -190,6 +201,7 @@ enum ActionType {
   SET_PRIMARY = 19;     // Set primary production building (actor_id = building)
   SURRENDER = 20;       // Surrender / resign — ends the game as a loss
   FAST_ADVANCE = 21;    // Fast-forward N ticks at CPU speed (no real-time sleeping)
+  PATROL = 22;          // Patrol between current position and target
 }
 
 // ─── State Query ─────────────────────────────────────────────────────────────
@@ -206,6 +218,7 @@ message GameState {
 
 message StateRequest {
   string session_id = 1;  // Route to specific session (multi-session mode)
+  string player = 2;      // Player internal name, e.g. "Multi0"
 }
 
 // ─── Fast Advance (Unary) ───────────────────────────────────────────────────
@@ -220,9 +233,58 @@ message FastAdvanceRequest {
   // 0 = disabled (legacy behavior: advance full ticks, no interrupt checks).
   int32 check_events_every = 4;
   repeated string enabled_interrupts = 5;  // Signal names: "enemy_spotted", "building_discovered", etc.
+  string player = 6;      // Player internal name, e.g. "Multi0"
 }
 
 // ─── Session Management (Multi-Session Mode) ────────────────────────────────
+
+// ─── Arena ──────────────────────────────────────────────────────────────────
+
+message ListPlayersRequest { string session_id = 1; }
+
+message PlayerSlot {
+  string player = 1;       // InternalName, e.g. "Multi0"
+  string faction = 2;
+  int32 team = 3;
+  bool is_external = 4;    // controlled by an ExternalBotBridge
+  string win_state = 5;    // "undefined", "won", "lost"
+  int32 spawn_x = 6;       // Player.HomeLocation
+  int32 spawn_y = 7;
+  bool taken_over = 8;     // built-in AI currently controls this player
+}
+
+message ListPlayersResponse {
+  repeated PlayerSlot players = 1;
+  int32 tick = 2;
+  string phase = 3;        // "lobby_gate", "playing", "game_over"
+}
+
+message ObserveRequest {
+  string session_id = 1;
+  string player = 2;
+  bool include_spatial = 3;
+}
+
+message IssueCommandsRequest {
+  string session_id = 1;
+  string player = 2;
+  repeated Command commands = 3;
+}
+
+message IssueCommandsResponse {
+  int32 queued = 1;
+  int32 tick = 2;
+}
+
+message StartMatchRequest { string session_id = 1; }
+message EndMatchRequest { string session_id = 1; string reason = 2; }
+message SetTakeoverRequest { string session_id = 1; string player = 2; bool enabled = 3; }
+
+message MatchControlResponse {
+  bool ok = 1;
+  string message = 2;
+  int32 tick = 3;
+}
 
 message CreateSessionRequest {
   string map_name = 1;    // Map filename or UID

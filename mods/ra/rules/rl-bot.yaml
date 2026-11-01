@@ -4,6 +4,14 @@ Player:
 		Type: rl-agent
 		Port: 9999
 		ObservationInterval: 9999
+	ExternalBotBridge@ARENA:
+		Name: bot-arena-agent.name
+		Type: arena-agent
+		Port: 9999
+		ObservationInterval: 9999
+		Realtime: true
+	ExternalCondition@ARENA_TAKEOVER:
+		Condition: enable-normal-ai
 	ModularBot@DummyAI:
 		Name: bot-dummy-ai.name
 		Type: dummy

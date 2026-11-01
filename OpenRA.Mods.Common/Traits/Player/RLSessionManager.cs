@@ -190,8 +190,9 @@ namespace OpenRA.Mods.Common.Traits
 					Log.Write("rl-bridge", $"Session {sessionId} init failed: {e}");
 					SessionStates.TryRemove(sessionId, out _);
 
-					if (ExternalBotBridge.Sessions.TryRemove(sessionId, out var crashed))
+					foreach (var crashed in ExternalBotBridge.Registry.Bridges(sessionId))
 						crashed.Deactivate();
+					ExternalBotBridge.Registry.RemoveSession(sessionId);
 				}
 			})
 			{
@@ -208,8 +209,9 @@ namespace OpenRA.Mods.Common.Traits
 		/// </summary>
 		public static void DestroySession(string sessionId)
 		{
-			if (ExternalBotBridge.Sessions.TryGetValue(sessionId, out var bridge))
-				bridge.Deactivate();
+			foreach (var b in ExternalBotBridge.Registry.Bridges(sessionId))
+				b.Deactivate();
+			ExternalBotBridge.Registry.RemoveSession(sessionId);
 
 			if (SessionStates.TryRemove(sessionId, out var state))
 			{
@@ -391,7 +393,7 @@ namespace OpenRA.Mods.Common.Traits
 			ExternalBotBridge bridge = null;
 			foreach (var player in world.Players)
 			{
-				var b = player.PlayerActor.TraitOrDefault<ExternalBotBridge>();
+				var b = player.PlayerActor.TraitsImplementing<ExternalBotBridge>().FirstOrDefault(t => t.IsEnabled);
 				if (b != null && b.IsEnabled)
 				{
 					bridge = b;
@@ -412,8 +414,7 @@ namespace OpenRA.Mods.Common.Traits
 			var actualId = bridge.SessionId;
 			if (actualId != sessionId)
 			{
-				ExternalBotBridge.Sessions.TryRemove(actualId, out _);
-				ExternalBotBridge.Sessions[sessionId] = bridge;
+				ExternalBotBridge.Registry.MoveSession(actualId, sessionId);
 			}
 
 			Log.Write("rl-bridge", $"Session {sessionId}: Ready (init thread exiting)");

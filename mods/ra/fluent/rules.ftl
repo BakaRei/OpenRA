@@ -962,6 +962,9 @@ bot-medium-ai =
 bot-rl-agent =
     .name = RL Agent
 
+bot-arena-agent =
+    .name = Arena Agent
+
 bot-dummy-ai =
     .name = Dummy (Passive)
 

@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using OpenRA.Traits;
 using RLProto = OpenRA.Mods.Common.RL;
 
@@ -20,8 +21,19 @@ namespace OpenRA.Mods.Common.Traits
 	/// </summary>
 	public sealed class ActionHandler
 	{
+		static readonly HashSet<RLProto.ActionType> SubjectActions =
+		[
+			RLProto.ActionType.Move, RLProto.ActionType.AttackMove, RLProto.ActionType.Attack, RLProto.ActionType.Stop,
+			RLProto.ActionType.Harvest, RLProto.ActionType.Deploy, RLProto.ActionType.Sell, RLProto.ActionType.Repair,
+			RLProto.ActionType.SetRallyPoint, RLProto.ActionType.Guard, RLProto.ActionType.SetStance,
+			RLProto.ActionType.EnterTransport, RLProto.ActionType.Unload, RLProto.ActionType.PowerDown,
+			RLProto.ActionType.SetPrimary, RLProto.ActionType.Patrol,
+		];
+
 		readonly World world;
 		readonly Player player;
+
+		public bool Realtime;
 
 		public ActionHandler(World world, Player player)
 		{
@@ -29,10 +41,33 @@ namespace OpenRA.Mods.Common.Traits
 			this.player = player;
 		}
 
+		public static string RejectReason(RLProto.ActionType action, bool subjectExists, string subjectOwner, string player, bool realtime)
+		{
+			if (action == RLProto.ActionType.Patrol)
+				return "unsupported_action";
+
+			// Realtime arena: no fast-forward, and surrender goes through the coordinator.
+			if (realtime && (action == RLProto.ActionType.FastAdvance || action == RLProto.ActionType.Surrender))
+				return "unsupported_action";
+
+			if (SubjectActions.Contains(action) && subjectExists && subjectOwner != player)
+				return "not_owner";
+
+			return null;
+		}
+
 		public void ProcessAction(RLProto.AgentAction agentAction, IBot bot)
 		{
 			foreach (var command in agentAction.Commands)
 			{
+				var subject = command.ActorId != 0 ? world.GetActorById(command.ActorId) : null;
+				var reason = RejectReason(command.Action, subject != null, subject?.Owner?.InternalName, player.InternalName, Realtime);
+				if (reason != null)
+				{
+					RLEventLog.CommandRejected(world.WorldTick, player.InternalName, command.Action.ToString(), command.ActorId, reason);
+					continue;
+				}
+
 				var order = ConvertCommand(command);
 				if (order != null)
 					bot.QueueOrder(order);

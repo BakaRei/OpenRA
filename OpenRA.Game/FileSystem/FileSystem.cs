@@ -201,9 +201,47 @@ namespace OpenRA.FileSystem
 		public Stream Open(string filename)
 		{
 			if (!TryOpen(filename, out var s))
+			{
+				// In headless mode, external game art assets may not be installed.
+				// Return a stream of zeros so subsystems can initialize without crashing.
+				if (Game.IsHeadless)
+					return new NullStream();
+
 				throw new FileNotFoundException($"File not found: {filename}", filename);
+			}
 
 			return s;
+		}
+
+		/// <summary>
+		/// A read-only stream that returns zeros indefinitely. Used as a placeholder
+		/// for missing art assets in headless mode.
+		/// </summary>
+		sealed class NullStream : Stream
+		{
+			long position;
+			public override bool CanRead => true;
+			public override bool CanSeek => true;
+			public override bool CanWrite => false;
+			public override long Length => long.MaxValue;
+			public override long Position { get => position; set => position = value; }
+			public override int Read(byte[] buffer, int offset, int count)
+			{
+				Array.Clear(buffer, offset, count);
+				position += count;
+				return count;
+			}
+
+			public override long Seek(long offset, SeekOrigin origin) => origin switch
+			{
+				SeekOrigin.Begin => position = offset,
+				SeekOrigin.Current => position += offset,
+				_ => position = offset
+			};
+
+			public override void Flush() { }
+			public override void SetLength(long value) { }
+			public override void Write(byte[] buffer, int offset, int count) { }
 		}
 
 		public bool TryGetPackageContaining(string path, out IReadOnlyPackage package, out string filename)

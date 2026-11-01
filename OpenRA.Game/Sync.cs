@@ -173,7 +173,8 @@ namespace OpenRA
 			RunUnsynced(checkSyncHash, world, () => { fn(); return true; });
 		}
 
-		static int unsyncCount = 0;
+		[ThreadStatic]
+		static int unsyncCount;
 
 		public static T RunUnsynced<T>(World world, Func<T> fn)
 		{

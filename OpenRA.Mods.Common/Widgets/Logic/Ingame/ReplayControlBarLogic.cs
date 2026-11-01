@@ -45,8 +45,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				var speed = PlaybackSpeed.Regular;
 				var originalTimestep = world.Timestep;
 
-				// In the event the replay goes out of sync, it becomes no longer usable. For polish we permanently pause the world.
-				bool IsWidgetDisabled() => orderManager.IsOutOfSync || orderManager.NetFrameNumber >= replayNetTicks;
+				// Disable controls once the replay reaches the end.
+				bool IsWidgetDisabled() => orderManager.NetFrameNumber >= replayNetTicks;
 
 				var pauseButton = widget.Get<ButtonWidget>("BUTTON_PAUSE");
 				pauseButton.IsVisible = () => world.ReplayTimestep != 0 && !IsWidgetDisabled();

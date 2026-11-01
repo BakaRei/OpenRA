@@ -60,6 +60,22 @@ namespace OpenRA.Mods.Common.Effects
 			if (delay-- > 0)
 				return;
 
+			// In headless mode, ScreenMap has no worldRenderer — skip visual effects entirely
+			if (Game.IsHeadless)
+			{
+				if (!initialized)
+				{
+					anim.PlayThen(sequence, () => world.AddFrameEndTask(w => w.Remove(this)));
+					initialized = true;
+				}
+				else
+				{
+					anim.Tick();
+				}
+
+				return;
+			}
+
 			if (!initialized)
 			{
 				anim.PlayThen(sequence, () => world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); }));

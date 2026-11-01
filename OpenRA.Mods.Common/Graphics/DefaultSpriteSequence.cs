@@ -471,11 +471,14 @@ namespace OpenRA.Mods.Common.Graphics
 
 			Sprite depthSprite = null;
 			if (depthSpriteReservation != null)
-				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).First(s => s != null);
+				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).FirstOrDefault(s => s != null);
 
 			var allSprites = spritesToLoad.SelectMany(r =>
 			{
 				var resolved = cache.ResolveSprites(r.Token);
+				if (resolved.Length == 0)
+					return [];
+
 				if (r.Frames != null)
 					resolved = r.Frames.Select(f => resolved[f]).ToArray();
 
@@ -499,6 +502,18 @@ namespace OpenRA.Mods.Common.Graphics
 					return new SpriteWithSecondaryData(sprite, depthSprite.Sheet, Rectangle.FromLTRB(cw - w, ch - h, cw + w, ch + h), depthSprite.Channel);
 				});
 			}).ToArray();
+
+			// In headless mode, missing art assets result in empty sprite arrays.
+			// Create valid dummy sprites so downstream code (GetSprite, etc.) works.
+			if (allSprites.Length == 0)
+			{
+				length ??= 1;
+				var dummySheet = new Sheet(SheetType.BGRA, new Size(1, 1));
+				var dummySprite = new Sprite(dummySheet, new Rectangle(0, 0, 1, 1), TextureChannel.RGBA);
+				sprites = Exts.MakeArray(length.Value, _ => dummySprite);
+				bounds = Rectangle.Empty;
+				return;
+			}
 
 			length ??= allSprites.Length - start;
 

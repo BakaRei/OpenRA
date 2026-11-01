@@ -1,4 +1,13 @@
 Player:
+	ModularBot@BeginnerAI:
+		Name: bot-beginner-ai.name
+		Type: beginner
+	ModularBot@EasyAI:
+		Name: bot-easy-ai.name
+		Type: easy
+	ModularBot@MediumAI:
+		Name: bot-medium-ai.name
+		Type: medium
 	ModularBot@RushAI:
 		Name: bot-rush-ai.name
 		Type: rush
@@ -11,6 +20,15 @@ Player:
 	ModularBot@NavalAI:
 		Name: bot-naval-ai.name
 		Type: naval
+	GrantConditionOnBotOwner@beginner:
+		Condition: enable-beginner-ai
+		Bots: beginner
+	GrantConditionOnBotOwner@easy:
+		Condition: enable-easy-ai
+		Bots: easy
+	GrantConditionOnBotOwner@medium:
+		Condition: enable-medium-ai
+		Bots: medium
 	GrantConditionOnBotOwner@rush:
 		Condition: enable-rush-ai
 		Bots: rush
@@ -24,14 +42,14 @@ Player:
 		Condition: enable-naval-ai
 		Bots: naval
 	ResourceMapBotModule:
-		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai
+		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-easy-ai || enable-medium-ai
 		ResourceCreatorTypes: mine, gmine
 		ValuableResourceTypes: Ore, Gems
 		HarvesterTypes: harv
 		RefineryTypes: proc
 		EnemyBaseBuildingTypes: pbox,gun,ftur,tsla,agun,barr,tent,weap,afld,hpad,fact,powr,apwr,proc
 	SupportPowerBotModule:
-		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai
+		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai || enable-medium-ai
 		Decisions:
 			spyplane:
 				OrderName: SovietSpyPlane
@@ -81,6 +99,21 @@ Player:
 					Attractiveness: -10
 					TargetMetric: Value
 					CheckRadius: 7c0
+	HarvesterBotModule@beginner:
+		RequiresCondition: enable-beginner-ai
+		HarvesterTypes: harv
+		RefineryTypes: proc
+		InitialHarvesters: 1
+	HarvesterBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		HarvesterTypes: harv
+		RefineryTypes: proc
+		InitialHarvesters: 2
+	HarvesterBotModule@medium:
+		RequiresCondition: enable-medium-ai
+		HarvesterTypes: harv
+		RefineryTypes: proc
+		InitialHarvesters: 3
 	HarvesterBotModule@rush-naval:
 		RequiresCondition: enable-rush-ai || enable-naval-ai
 		HarvesterTypes: harv
@@ -91,6 +124,148 @@ Player:
 		HarvesterTypes: harv
 		RefineryTypes: proc
 		InitialHarvesters: 4
+	BaseBuilderBotModule@beginner:
+		RequiresCondition: enable-beginner-ai
+		MinimumExcessPower: 0
+		MaximumExcessPower: 100
+		ExcessPowerIncrement: 20
+		ExcessPowerIncreaseThreshold: 6
+		StructureProductionActiveDelay: 200
+		StructureProductionInactiveDelay: 500
+		StructureProductionRandomBonusDelay: 100
+		ConstructionYardTypes: fact
+		RefineryTypes: proc
+		PowerTypes: powr
+		ExpansionTolerate: 0
+		ForceExpansionTolerate: 0
+		TechTypes: dome
+		InititalMinimumRefineryCount: 1
+		AdditionalMinimumRefineryCount: 0
+		ProductionTypes: barr,tent
+		NewProductionCashThreshold: 15000
+		SiloTypes: silo
+		DefenseTypes: pbox,hbox,gun
+		ProductionMinCashRequirement: 1000
+		BuildingLimits:
+			barr: 1
+			tent: 1
+			dome: 1
+		BuildingFractions:
+			powr: 1
+			proc: 1
+			barr: 1
+			tent: 1
+			pbox: 2
+			gun: 1
+			dome: 1
+		BuildingDelays:
+			dome: 20000
+			pbox: 5000
+			gun: 8000
+	BaseBuilderBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		MinimumExcessPower: 0
+		MaximumExcessPower: 150
+		ExcessPowerIncrement: 30
+		ExcessPowerIncreaseThreshold: 5
+		StructureProductionActiveDelay: 80
+		StructureProductionInactiveDelay: 250
+		StructureProductionRandomBonusDelay: 50
+		ConstructionYardTypes: fact
+		RefineryTypes: proc
+		PowerTypes: powr,apwr
+		ExpansionTolerate: 0, 1
+		ForceExpansionTolerate: 0
+		TechTypes: dome, fix
+		InititalMinimumRefineryCount: 1
+		AdditionalMinimumRefineryCount: 1
+		ProductionTypes: barr,tent,weap
+		NewProductionCashThreshold: 10000
+		SiloTypes: silo
+		DefenseTypes: pbox,hbox,gun,ftur,sam
+		ProductionMinCashRequirement: 750
+		BuildingLimits:
+			barr: 2
+			tent: 2
+			dome: 1
+			weap: 1
+			fix: 1
+		BuildingFractions:
+			powr: 1
+			proc: 1
+			barr: 2
+			tent: 2
+			weap: 2
+			pbox: 4
+			gun: 4
+			ftur: 3
+			sam: 2
+			dome: 1
+			fix: 1
+		BuildingDelays:
+			dome: 10000
+			fix: 8000
+			weap: 5000
+			pbox: 3000
+			gun: 4000
+			ftur: 4000
+			sam: 10000
+	BaseBuilderBotModule@medium:
+		RequiresCondition: enable-medium-ai
+		MinimumExcessPower: 0
+		MaximumExcessPower: 180
+		ExcessPowerIncrement: 35
+		ExcessPowerIncreaseThreshold: 4
+		StructureProductionActiveDelay: 40
+		StructureProductionInactiveDelay: 160
+		StructureProductionRandomBonusDelay: 20
+		ConstructionYardTypes: fact
+		RefineryTypes: proc
+		PowerTypes: powr,apwr
+		ExpansionTolerate: 0, 1, 2
+		ForceExpansionTolerate: 2, 3
+		TechTypes: dome, atek, stek, fix
+		InititalMinimumRefineryCount: 0
+		AdditionalMinimumRefineryCount: 2
+		ProductionTypes: barr,tent,weap
+		NewProductionCashThreshold: 9000
+		SiloTypes: silo
+		DefenseTypes: hbox,pbox,gun,ftur,tsla,agun,sam
+		ProductionMinCashRequirement: 500
+		BuildingLimits:
+			barr: 4
+			tent: 4
+			dome: 1
+			weap: 2
+			atek: 1
+			stek: 1
+			fix: 1
+		BuildingFractions:
+			powr: 1
+			proc: 1
+			tent: 3
+			barr: 3
+			weap: 3
+			pbox: 6
+			gun: 6
+			ftur: 7
+			tsla: 3
+			fix: 1
+			dome: 1
+			agun: 3
+			sam: 1
+			atek: 1
+			stek: 1
+			mslo: 1
+		BuildingDelays:
+			dome: 7000
+			fix: 4000
+			pbox: 2000
+			gun: 2500
+			ftur: 2000
+			tsla: 3500
+			atek: 12000
+			stek: 12000
 	BaseBuilderBotModule@rush:
 		RequiresCondition: enable-rush-ai
 		MinimumExcessPower: 0
@@ -328,10 +503,52 @@ Player:
 			tsla: 21000
 			kenn: 4000
 	PowerDownBotModule:
-		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai
+		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai || enable-easy-ai || enable-medium-ai
 		PowerDownTypes: dome,tsla,mslo,agun,sam
 	BuildingRepairBotModule:
-		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai
+		RequiresCondition: enable-rush-ai || enable-normal-ai || enable-turtle-ai || enable-naval-ai || enable-medium-ai
+	BuildingRepairBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		RepairAllBuildingsCoolDown: 500
+	SquadManagerBotModule@beginner:
+		RequiresCondition: enable-beginner-ai
+		SquadSize: 3
+		SquadSizeRandomBonus: 2
+		ExcludeFromSquadsTypes: harv, mcv, dog, badr.bomber, u2
+		ConstructionYardTypes: fact
+		AircraftTargetType: AirborneActor
+		ProtectionTypes: harv, mcv, fact, proc, powr, barr, tent
+		IgnoredEnemyTargetTypes: AirborneActor
+		RushInterval: 5000
+		MinimumAttackForceDelay: 150000
+		ProtectUnitScanRadius: 10
+		ProtectionScanRadius: 8
+	SquadManagerBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		SquadSize: 8
+		SquadSizeRandomBonus: 4
+		ExcludeFromSquadsTypes: harv, mcv, dog, badr.bomber, u2
+		ConstructionYardTypes: fact
+		AircraftTargetType: AirborneActor
+		ProtectionTypes: harv, mcv, fact, proc, powr, barr, tent, weap, pbox, gun, ftur, sam
+		IgnoredEnemyTargetTypes: AirborneActor
+		RushInterval: 2500
+		MinimumAttackForceDelay: 80000
+		ProtectUnitScanRadius: 12
+		ProtectionScanRadius: 10
+	SquadManagerBotModule@medium:
+		RequiresCondition: enable-medium-ai
+		SquadSize: 20
+		SquadSizeRandomBonus: 15
+		ExcludeFromSquadsTypes: harv, mcv, dog, badr.bomber, u2
+		ConstructionYardTypes: fact
+		AircraftTargetType: AirborneActor
+		ProtectionTypes: harv, mcv, mslo, gap, tsla, agun, dome, pbox, hbox, gun, ftur, sam, atek, weap, fact, proc, silo, powr, apwr, stek, barr, kenn, tent, fix
+		IgnoredEnemyTargetTypes: AirborneActor
+		RushInterval: 800
+		MinimumAttackForceDelay: 5000
+		ProtectUnitScanRadius: 15
+		ProtectionScanRadius: 12
 	SquadManagerBotModule@rush:
 		RequiresCondition: enable-rush-ai
 		SquadSize: 20
@@ -342,11 +559,28 @@ Player:
 		AircraftTargetType: AirborneActor
 		ProtectionTypes: harv, mcv, mslo, gap, spen, syrd, iron, pdox, tsla, agun, dome, pbox, hbox, gun, ftur, sam, atek, weap, fact, proc, silo, hpad, afld, afld.ukraine, powr, apwr, stek, barr, kenn, tent, fix, fpwr, tenf, syrf, spef, weaf, domf, fixf, fapw, atef, pdof, mslf, facf
 		IgnoredEnemyTargetTypes: AirborneActor
+	McvManagerBotModule@beginner:
+		RequiresCondition: enable-beginner-ai
+		McvTypes: mcv
+		ConstructionYardTypes: fact
+		McvFactoryTypes: weap
 	McvManagerBotModule@naval:
 		RequiresCondition: enable-naval-ai
 		McvTypes: mcv
 		ConstructionYardTypes: fact
 		McvFactoryTypes: weap
+	McvExpansionManagerBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		McvTypes: mcv
+		ConstructionYardTypes: fact
+		McvFactoryTypes: weap
+		MinimumConstructionYardCount: 1
+	McvExpansionManagerBotModule@medium:
+		RequiresCondition: enable-medium-ai
+		McvTypes: mcv
+		ConstructionYardTypes: fact
+		McvFactoryTypes: weap
+		MinimumConstructionYardCount: 2
 	McvExpansionManagerBotModule@rush:
 		RequiresCondition: enable-rush-ai
 		McvTypes: mcv
@@ -368,6 +602,70 @@ Player:
 		MoveOldConyardFirst: false
 		MoveConyardTick: 8000
 		MinimumConstructionYardCount: 2
+	UnitBuilderBotModule@beginner:
+		RequiresCondition: enable-beginner-ai
+		IdleBaseUnitsMaximum: 8
+		UnitsToBuild:
+			e1: 70
+			e3: 20
+			dog: 5
+			harv: 5
+		UnitLimits:
+			e1: 4
+			e3: 2
+			dog: 1
+			harv: 2
+		ProductionMinCashRequirement: 1000
+	UnitBuilderBotModule@easy:
+		RequiresCondition: enable-easy-ai
+		UnitsToBuild:
+			e1: 60
+			e2: 15
+			e3: 25
+			dog: 10
+			harv: 10
+			jeep: 15
+			apc: 10
+			1tnk: 20
+			2tnk: 15
+			3tnk: 10
+		UnitLimits:
+			e1: 6
+			e2: 3
+			e3: 4
+			dog: 2
+			harv: 4
+			jeep: 2
+			apc: 2
+			1tnk: 3
+			2tnk: 2
+			3tnk: 2
+		ProductionMinCashRequirement: 750
+	UnitBuilderBotModule@medium:
+		RequiresCondition: enable-medium-ai
+		UnitsToBuild:
+			e1: 55
+			e2: 15
+			e3: 25
+			e4: 10
+			dog: 10
+			harv: 12
+			apc: 20
+			jeep: 15
+			arty: 10
+			v2rl: 25
+			ftrk: 20
+			1tnk: 35
+			2tnk: 40
+			3tnk: 40
+			4tnk: 15
+		UnitLimits:
+			dog: 3
+			harv: 6
+			jeep: 3
+			ftrk: 3
+			4tnk: 2
+		ProductionMinCashRequirement: 500
 	UnitBuilderBotModule@rush:
 		RequiresCondition: enable-rush-ai
 		UnitsToBuild:

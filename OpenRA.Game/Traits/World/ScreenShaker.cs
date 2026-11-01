@@ -48,7 +48,9 @@ namespace OpenRA.Traits
 			var newOffset = shakeEffects.Count > 0 ? GetScrollOffset() : Vector2.Zero;
 			if (newOffset != previousOffset)
 			{
-				worldRenderer.Viewport.Scroll(newOffset - previousOffset, true);
+				// Headless games have no world renderer; skip the viewport update.
+				worldRenderer?.Viewport.Scroll(newOffset - previousOffset, true);
+
 				previousOffset = newOffset;
 			}
 
@@ -80,6 +82,9 @@ namespace OpenRA.Traits
 
 		float GetIntensity()
 		{
+			if (worldRenderer == null)
+				return 0;
+
 			var cp = worldRenderer.Viewport.CenterPosition;
 			var intensity = 100 * 1024 * 1024 * shakeEffects.Sum(
 				e => (float)e.Intensity / (e.Position - cp).LengthSquared);

@@ -27,4 +27,7 @@
 		<ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
 		<AdditionalFiles Include="Properties/launchSettings.json" />
 	</ItemGroup>
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
 </Project>

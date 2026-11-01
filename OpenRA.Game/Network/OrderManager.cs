@@ -65,6 +65,9 @@ namespace OpenRA.Network
 		int sentOrdersFrame = 0;
 		float tickScale = 1f;
 
+		/// <summary>True when game is fast-forwarding (tickScale &lt; 1.0), e.g. during RL advance().</summary>
+		public bool IsFastForwarding => tickScale < 1f;
+
 		/// <summary>
 		/// Indicates if the world state of other players or a replay has diverged from the local state.
 		/// The game cannot reliably continue in this condition and is unusable.

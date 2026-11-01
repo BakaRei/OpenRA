@@ -110,6 +110,7 @@ namespace OpenRA.Network
 		volatile ConnectionState connectionState = ConnectionState.Connecting;
 		volatile int clientId;
 		bool disposed;
+		int sendFailCount;
 
 		public NetworkConnection(ConnectionTarget target)
 		{
@@ -276,10 +277,19 @@ namespace OpenRA.Network
 				queuedSyncPackets.Clear();
 				ms.WriteTo(tcp.GetStream());
 			}
-			catch (SocketException) { /* drop this on the floor; we'll pick up the disconnect from the reader thread */ }
-			catch (ObjectDisposedException) { /* ditto */ }
-			catch (InvalidOperationException) { /* ditto */ }
-			catch (IOException) { /* ditto */ }
+			catch (SocketException ex) { LogSendFailure(ex); }
+			catch (ObjectDisposedException ex) { LogSendFailure(ex); }
+			catch (InvalidOperationException ex) { LogSendFailure(ex); }
+			catch (IOException ex) { LogSendFailure(ex); }
+		}
+
+		void LogSendFailure(Exception ex)
+		{
+			sendFailCount++;
+			if (sendFailCount == 1)
+				Log.Write("client", $"Connection send failed ({ex.GetType().Name}): {ex.Message}");
+			else if (sendFailCount % 100 == 0)
+				Log.Write("client", $"Connection send failed x{sendFailCount} ({ex.GetType().Name})");
 		}
 
 		void IConnection.Receive(OrderManager orderManager)

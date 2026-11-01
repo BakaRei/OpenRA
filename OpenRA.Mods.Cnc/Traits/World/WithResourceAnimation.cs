@@ -82,6 +82,10 @@ namespace OpenRA.Mods.Cnc.Traits
 			if (--ticks > 0)
 				return;
 
+			// Skip in headless mode (no WorldRenderer)
+			if (worldRenderer == null)
+				return;
+
 			var cells = new HashSet<CPos>();
 			foreach (var uv in worldRenderer.Viewport.AllVisibleCells.CandidateMapCoords)
 			{

@@ -44,10 +44,13 @@ namespace OpenRA
 		public static CursorManager Cursor;
 		public static bool HideCursor;
 
+		/// <summary>True when running with the Null platform (no GPU/rendering).</summary>
+		public static bool IsHeadless => Settings?.Game?.Platform == "Null";
+
 		static WorldRenderer worldRenderer;
 		static string modLaunchWrapper;
 
-		internal static OrderManager OrderManager;
+		public static OrderManager OrderManager;
 		static Server.Server server;
 
 		public static MersenneTwister CosmeticRandom = new(); // not synced
@@ -198,7 +201,7 @@ namespace OpenRA
 			// Dispose of the old world before creating a new one.
 			worldRenderer?.Dispose();
 
-			Cursor.SetCursor(null);
+			Cursor?.SetCursor(null);
 			BeforeGameStart();
 
 			using (new PerfTimer("NewWorld"))
@@ -241,7 +244,7 @@ namespace OpenRA
 
 			OrderManager.StartGame();
 			worldRenderer.RefreshPalette();
-			Cursor.SetCursor(ChromeMetrics.Get<string>("DefaultCursor"));
+			Cursor?.SetCursor(ChromeMetrics.Get<string>("DefaultCursor"));
 
 			// Now loading is completed, now is the ideal time to run a GC and compact the LOH.
 			// - All the temporary garbage created during loading can be collected.
@@ -386,6 +389,7 @@ namespace OpenRA
 			Log.AddChannel("geoip", "geoip.log");
 			Log.AddChannel("nat", "nat.log");
 			Log.AddChannel("client", "client.log");
+			Log.AddChannel("rl-bridge", "rl-bridge.log");
 
 			Nat.Initialize();
 
@@ -512,8 +516,12 @@ namespace OpenRA
 			using (new PerfTimer("LoadMaps"))
 				ModData.MapCache.LoadMaps(ModData);
 
-			Cursor?.Dispose();
-			Cursor = new CursorManager(ModData);
+			// Skip cursor loading in headless mode (no game art assets available)
+			if (!IsHeadless)
+			{
+				Cursor?.Dispose();
+				Cursor = new CursorManager(ModData);
+			}
 
 			var metadata = ModData.Manifest.Metadata;
 			if (!string.IsNullOrEmpty(metadata.WindowTitleTranslated))
@@ -632,7 +640,7 @@ namespace OpenRA
 			{
 				Ui.LastTickTime.AdvanceTickTime(tick);
 				Sync.RunUnsynced(world, Ui.Tick);
-				Cursor.Tick();
+				Cursor?.Tick();
 			}
 
 			if (orderManager.LastTickTime.ShouldAdvance(tick))
@@ -665,7 +673,8 @@ namespace OpenRA
 					}
 
 					// Wait until we have done our first world Tick before TickRendering
-					if (orderManager.LocalFrameNumber > 0)
+					// Skip render tick in headless mode — no rendering occurs
+					if (orderManager.LocalFrameNumber > 0 && !IsHeadless)
 						Sync.RunUnsynced(world, () => world.TickRender(worldRenderer));
 				}
 
@@ -707,17 +716,29 @@ namespace OpenRA
 				// Prepare renderables (i.e. render voxels) before calling BeginFrame
 				using (new PerfSample("render_prepare"))
 				{
-					worldRenderer?.BeginFrame();
-
-					// World rendering is disabled while the loading screen is displayed
-					if (worldRenderer != null && !worldRenderer.World.IsLoadingGameSave)
+					try
 					{
-						worldRenderer.Viewport.Tick();
-						worldRenderer.PrepareRenderables();
-					}
+						worldRenderer?.BeginFrame();
 
-					Ui.PrepareRenderables();
-					worldRenderer?.EndFrame();
+						// World rendering is disabled while the loading screen is displayed
+						if (worldRenderer != null && !worldRenderer.World.IsLoadingGameSave)
+						{
+							worldRenderer.Viewport.Tick();
+							worldRenderer.PrepareRenderables();
+						}
+
+						Ui.PrepareRenderables();
+						worldRenderer?.EndFrame();
+					}
+					catch (Exception e) when (e is IndexOutOfRangeException or InvalidOperationException)
+					{
+						// In headless mode, rendering errors from missing art assets are expected — swallow silently.
+						// In rendered mode, log but don't crash.
+						if (!IsHeadless)
+							Log.Write("debug", $"Render error (non-fatal): {e.Message}");
+						try { worldRenderer?.EndFrame(); }
+						catch { /* ignore cleanup errors */ }
+					}
 				}
 
 				// worldRenderer is null during the initial install/download screen
@@ -815,6 +836,30 @@ namespace OpenRA
 
 			while (state == RunStatus.Running)
 			{
+				// Headless fast-forward: bypass timing/render system entirely.
+				// Runs logic ticks in a tight loop with no sleep or render interleave.
+				// ExternalBotBridge sets tickScale < 1.0 during advance(), which makes
+				// IsFastForwarding true. We batch up to 5000 ticks per iteration to
+				// avoid starving other threads indefinitely.
+				if (IsHeadless && OrderManager.IsFastForwarding)
+				{
+					const int MaxTicksPerBurst = 5000;
+					for (var i = 0; i < MaxTicksPerBurst && state == RunStatus.Running && OrderManager.IsFastForwarding; i++)
+					{
+						// Force TickTime to allow immediate advancement by backdating it.
+						// Without this, ShouldAdvance() gates ticks to 1ms real-time intervals.
+						OrderManager.LastTickTime.Value = 0;
+						LogicTick();
+					}
+
+					// Reset timing state so the normal loop resumes cleanly
+					nextLogic = RunTime;
+					nextRender = RunTime;
+					forcedNextRender = RunTime;
+					renderBeforeNextTick = false;
+					continue;
+				}
+
 				var logicInterval = Ui.Timestep;
 				var logicWorld = worldRenderer?.World;
 
@@ -999,13 +1044,29 @@ namespace OpenRA
 			benchmark = new Benchmark(prefix);
 		}
 
-		public static void LoadMap(string launchMap)
+		public static void LoadMap(string launchMap, string launchBots = null)
 		{
-			var orders = new List<Order>
+			var orders = new List<Order>();
+
+			// Add bots to slots before readying up.
+			// Format: "slot:bottype,slot:bottype" e.g. "Multi1:normal" or "Multi0:rl-agent,Multi1:normal"
+			if (!string.IsNullOrEmpty(launchBots))
 			{
-				Order.Command("option gamespeed default"),
-				Order.Command($"state {Session.ClientState.Ready}")
-			};
+				// Move host to spectator so all player slots are free for bots.
+				// Without this, the host auto-fills Multi0, blocking slot_bot from
+				// placing a bot there (slot_bot rejects slots with human clients).
+				orders.Add(Order.Command("spectate"));
+
+				foreach (var entry in launchBots.Split(','))
+				{
+					var parts = entry.Trim().Split(':');
+					if (parts.Length == 2)
+						orders.Add(Order.Command($"slot_bot {parts[0]} 0 {parts[1]}"));
+				}
+			}
+
+			orders.Add(Order.Command("option gamespeed default"));
+			orders.Add(Order.Command($"state {Session.ClientState.Ready}"));
 
 			var map = ModData.MapCache.SingleOrDefault(m => m.Uid == launchMap || Path.GetFileName(m.Path) == launchMap);
 			if (map == null)

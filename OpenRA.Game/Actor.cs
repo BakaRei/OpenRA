@@ -168,7 +168,17 @@ namespace OpenRA
 
 				foreach (var traitInfo in Info.TraitsInConstructOrder())
 				{
-					var trait = traitInfo.Create(init);
+					object trait;
+					try
+					{
+						trait = traitInfo.Create(init);
+					}
+					catch (Exception ex) when (Game.IsHeadless)
+					{
+						Log.Write("rl-bridge", $"Skipping trait {traitInfo.GetType().Name} on {name}: {ex.Message}");
+						continue;
+					}
+
 					AddTrait(trait);
 
 					// PERF: Cache all these traits as soon as the actor is created. This is a fairly cheap one-off cost per

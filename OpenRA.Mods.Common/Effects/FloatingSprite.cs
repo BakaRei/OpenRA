@@ -48,7 +48,8 @@ namespace OpenRA.Mods.Common.Effects
 
 			anim = new Animation(world, image, () => facing);
 			anim.PlayRepeating(sequences.Random(world.LocalRandom));
-			world.ScreenMap.Add(this, pos, anim.Image);
+			if (!Game.IsHeadless)
+				world.ScreenMap.Add(this, pos, anim.Image);
 			this.lifetime = Util.RandomInRange(world.LocalRandom, lifetime);
 
 			this.palette = isPlayerPalette ? palette + emitter.Owner.InternalName : palette;
@@ -58,7 +59,10 @@ namespace OpenRA.Mods.Common.Effects
 		{
 			if (--lifetime < 0)
 			{
-				world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); });
+				if (Game.IsHeadless)
+					world.AddFrameEndTask(w => w.Remove(this));
+				else
+					world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); });
 				return;
 			}
 
@@ -81,7 +85,8 @@ namespace OpenRA.Mods.Common.Effects
 
 			pos += offset;
 
-			world.ScreenMap.Update(this, pos, anim.Image);
+			if (!Game.IsHeadless)
+				world.ScreenMap.Update(this, pos, anim.Image);
 		}
 
 		public IEnumerable<IRenderable> Render(WorldRenderer wr)

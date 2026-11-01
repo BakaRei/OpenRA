@@ -10,6 +10,7 @@
 #endregion
 
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using OpenRA.FileSystem;
 using OpenRA.Primitives;
@@ -91,7 +92,17 @@ namespace OpenRA.Graphics
 	{
 		public static ISpriteFrame[] GetFrames(IReadOnlyFileSystem fileSystem, string filename, ISpriteLoader[] loaders, out TypeDictionary metadata)
 		{
-			using (var stream = fileSystem.Open(filename))
+			// In headless mode, missing art assets are expected — return dummy frames
+			if (!fileSystem.TryOpen(filename, out var stream))
+			{
+				metadata = null;
+				if (Game.IsHeadless)
+					return Enumerable.Repeat((ISpriteFrame)DummySpriteFrame.Instance, 256).ToArray();
+
+				throw new FileNotFoundException($"File not found: {filename}", filename);
+			}
+
+			using (stream)
 			{
 				var spriteFrames = GetFrames(stream, loaders, filename, out metadata);
 				if (spriteFrames == null)
@@ -111,5 +122,21 @@ namespace OpenRA.Graphics
 
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// Minimal 1x1 transparent sprite frame used as a placeholder when art assets are
+	/// unavailable in headless mode.
+	/// </summary>
+	sealed class DummySpriteFrame : ISpriteFrame
+	{
+		public static readonly DummySpriteFrame Instance = new();
+		static readonly byte[] DummyData = new byte[4]; // 1x1 BGRA transparent pixel
+		public SpriteFrameType Type => SpriteFrameType.Bgra32;
+		public Size Size => new(1, 1);
+		public Size FrameSize => new(1, 1);
+		public Vector2 Offset => Vector2.Zero;
+		public byte[] Data => DummyData;
+		public bool DisableExportPadding => true;
 	}
 }

@@ -9,12 +9,16 @@
  */
 #endregion
 
+using System.Threading;
 using OpenRA.Primitives;
 
 namespace OpenRA.Support
 {
 	public static class PerfHistory
 	{
+		/// <summary>When true, Increment is a no-op. Set in headless/multi-session mode to avoid lock contention.</summary>
+		public static volatile bool Disabled;
+
 		static readonly Color[] Colors =
 		[
 			Color.Red, Color.Green,
@@ -27,6 +31,7 @@ namespace OpenRA.Support
 		];
 
 		static int nextColor;
+		static readonly Lock SyncRoot = new();
 
 		public static Cache<string, PerfItem> Items = new(
 			s =>
@@ -38,7 +43,11 @@ namespace OpenRA.Support
 
 		public static void Increment(string item, double x)
 		{
-			Items[item].Val += x;
+			if (Disabled)
+				return;
+
+			lock (SyncRoot)
+				Items[item].Val += x;
 		}
 
 		public static void Tick(bool gameIsActive = true)

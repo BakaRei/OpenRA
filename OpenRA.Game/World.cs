@@ -113,6 +113,10 @@ namespace OpenRA
 
 		public bool IsReplay => OrderManager.Connection is ReplayConnection;
 
+		/// <summary>True if the connection to the game server is alive (or if using a local EchoConnection).</summary>
+		public bool IsConnectionAlive => OrderManager.Connection is not NetworkConnection nc
+			|| nc.ConnectionState == ConnectionState.Connected;
+
 		public bool IsLoadingGameSave => OrderManager.NetFrameNumber <= OrderManager.GameSaveLastFrame;
 
 		public int GameSaveLoadingPercentage => OrderManager.NetFrameNumber * 100 / OrderManager.GameSaveLastFrame;
@@ -150,6 +154,12 @@ namespace OpenRA
 		// Hide the OrderManager from mod code
 		public void IssueOrder(Order o) { OrderManager.IssueOrder(o); }
 
+		/// <summary>
+		/// Set the tick speed scale for fast-forward during RL training.
+		/// 1.0 = normal speed, 0.025 = ~40x faster, etc.
+		/// </summary>
+		public void SetTickScale(float scale) { OrderManager.ReceiveTickScale(scale); }
+
 		readonly Type defaultOrderGeneratorType;
 
 		IOrderGenerator orderGenerator;
@@ -175,7 +185,7 @@ namespace OpenRA
 
 		bool wasLoadingGameSave;
 
-		internal World(Map map, ModData modData, OrderManager orderManager, WorldType type)
+		public World(Map map, ModData modData, OrderManager orderManager, WorldType type)
 		{
 			Type = type;
 			OrderManager = orderManager;
@@ -277,14 +287,30 @@ namespace OpenRA
 				if (iwl == ScreenMap)
 					continue;
 
-				using (new PerfTimer(iwl.GetType().Name + ".WorldLoaded"))
-					iwl.WorldLoaded(this, wr);
+				try
+				{
+					using (new PerfTimer(iwl.GetType().Name + ".WorldLoaded"))
+						iwl.WorldLoaded(this, wr);
+				}
+				catch (Exception ex) when (Game.IsHeadless)
+				{
+					Log.Write("rl-bridge", $"Skipping WorldLoaded for {iwl.GetType().Name}: {ex.Message}");
+				}
 			}
 
 			foreach (var p in Players)
 				foreach (var iwl in p.PlayerActor.TraitsImplementing<IWorldLoaded>())
-					using (new PerfTimer(iwl.GetType().Name + ".WorldLoaded"))
-						iwl.WorldLoaded(this, wr);
+				{
+					try
+					{
+						using (new PerfTimer(iwl.GetType().Name + ".WorldLoaded"))
+							iwl.WorldLoaded(this, wr);
+					}
+					catch (Exception ex) when (Game.IsHeadless)
+					{
+						Log.Write("rl-bridge", $"Skipping WorldLoaded for {iwl.GetType().Name}: {ex.Message}");
+					}
+				}
 
 			foreach (var player in Players)
 				gameInfo.AddPlayer(player, OrderManager.LobbyInfo);

@@ -25,6 +25,7 @@ namespace OpenRA.Network
 		BinaryWriter writer;
 		readonly Func<string> chooseFilename;
 		MemoryStream preStartBuffer = new();
+		string savedFilePath;
 
 		static bool IsGameStart(byte[] data)
 		{
@@ -37,8 +38,8 @@ namespace OpenRA.Network
 		public ReplayRecorder(Func<string> chooseFilename)
 		{
 			this.chooseFilename = chooseFilename;
-
 			writer = new BinaryWriter(preStartBuffer);
+			Log.Write("debug", "ReplayRecorder created, buffering to memory");
 		}
 
 		void StartSavingReplay(byte[] initialContent)
@@ -46,6 +47,8 @@ namespace OpenRA.Network
 			var filename = chooseFilename();
 			var mod = Game.ModData.Manifest;
 			var dir = Path.Combine(Platform.SupportDir, "Replays", mod.Id, mod.Metadata.Version);
+
+			Log.Write("debug", $"ReplayRecorder: StartSavingReplay dir={dir}, preStartBytes={initialContent.Length}");
 
 			if (!Directory.Exists(dir))
 				Directory.CreateDirectory(dir);
@@ -59,6 +62,8 @@ namespace OpenRA.Network
 				try
 				{
 					file = File.Create(fullFilename);
+					savedFilePath = fullFilename;
+					Log.Write("debug", $"ReplayRecorder: saving to {fullFilename}");
 				}
 				catch (IOException ex)
 				{
@@ -73,11 +78,12 @@ namespace OpenRA.Network
 
 		public void Receive(int clientID, byte[] data)
 		{
-			if (disposed) // TODO: This can be removed once NetworkConnection is fixed to dispose properly.
+			if (disposed)
 				return;
 
 			if (preStartBuffer != null && IsGameStart(data))
 			{
+				Log.Write("debug", "ReplayRecorder: StartGame detected, switching to file");
 				writer.Flush();
 				var preStartData = preStartBuffer.ToArray();
 				preStartBuffer = null;
@@ -87,7 +93,13 @@ namespace OpenRA.Network
 			writer.Write(clientID);
 			writer.Write(data.Length);
 			writer.Write(data);
+
+			// Periodically flush to disk so replays are not truncated if the connection drops
+			if (preStartBuffer == null && ++receiveCount % 256 == 0)
+				writer.Flush();
 		}
+
+		int receiveCount;
 
 		public void ReceiveFrame(int clientID, int frame, byte[] data)
 		{
@@ -105,6 +117,10 @@ namespace OpenRA.Network
 				return;
 			disposed = true;
 
+			Log.Write("debug",
+				$"ReplayRecorder: Dispose (savedFile={savedFilePath ?? "NONE"}, " +
+				$"preStartBuffer={(preStartBuffer != null ? "still in memory!" : "flushed")}, receives={receiveCount})");
+
 			if (Metadata != null)
 			{
 				if (Metadata.GameInfo != null)
@@ -112,6 +128,7 @@ namespace OpenRA.Network
 				Metadata.Write(writer);
 			}
 
+			writer.Flush();
 			preStartBuffer?.Dispose();
 			writer.Close();
 		}

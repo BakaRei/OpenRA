@@ -97,7 +97,8 @@ namespace OpenRA.Mods.Common.Effects
 				if (anim != null)
 				{
 					anim.PlayRepeating(upSequence);
-					world.ScreenMap.Add(this, pos, anim.Image);
+					if (!Game.IsHeadless)
+						world.ScreenMap.Add(this, pos, anim.Image);
 				}
 
 				isLaunched = true;
@@ -132,7 +133,7 @@ namespace OpenRA.Mods.Common.Effects
 			if (ticks == impactDelay || (isDescending && dat <= detonationAltitude))
 				Explode(world, ticks == impactDelay || removeOnDetonation);
 
-			if (anim != null)
+			if (anim != null && !Game.IsHeadless)
 				world.ScreenMap.Update(this, pos, anim.Image);
 
 			ticks++;
@@ -141,7 +142,12 @@ namespace OpenRA.Mods.Common.Effects
 		void Explode(World world, bool removeProjectile)
 		{
 			if (removeProjectile)
-				world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); });
+			{
+				if (Game.IsHeadless)
+					world.AddFrameEndTask(w => w.Remove(this));
+				else
+					world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); });
+			}
 
 			if (detonated)
 				return;

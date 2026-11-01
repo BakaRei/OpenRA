@@ -167,7 +167,13 @@ namespace OpenRA.Graphics
 			resolvedSprites.TrimExcess();
 
 			if (missingFiles.TryGetValue(token, out var r))
+			{
+				// In headless mode, missing art assets are expected — return empty sprites
+				if (Game.IsHeadless)
+					return [];
+
 				throw new FileNotFoundException($"{r.Location}: {r.Filename} not found", r.Filename);
+			}
 
 			return resolved;
 		}

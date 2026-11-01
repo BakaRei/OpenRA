@@ -336,7 +336,7 @@ namespace OpenRA.Server
 				}
 			};
 
-			if (Settings.RecordReplays && Type == ServerType.Dedicated)
+			if (Settings.RecordReplays)
 			{
 				recorder = new ReplayRecorder(() => Game.TimestampedFilename(extra: "-Server"));
 

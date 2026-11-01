@@ -11,5 +11,21 @@
 		<PackageReference Include="TagLibSharp" Version="2.3.0" />
 		<PackageReference Include="rix0rrr.BeaconLib" Version="1.0.2" />
 		<PackageReference Include="Pfim" Version="0.11.3" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.67.0" />
+		<PackageReference Include="Google.Protobuf" Version="3.29.3" />
+		<PackageReference Include="Grpc.Tools" Version="2.69.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
 	</ItemGroup>
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+	<!-- Use protoc to generate from .proto when available (default local dev) -->
+	<ItemGroup Condition="'$(SKIP_PROTOC)' == ''">
+		<Protobuf Include="Traits\Player\Protos\rl_bridge.proto" GrpcServices="Server" />
+		<!-- Exclude pre-generated files when protoc generates fresh ones -->
+		<Compile Remove="Traits\Player\Protos\Generated\*.cs" />
+	</ItemGroup>
+	<!-- When SKIP_PROTOC is set, pre-generated files are auto-included by SDK globbing -->
 </Project>

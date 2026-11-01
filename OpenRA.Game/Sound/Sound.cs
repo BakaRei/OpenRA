@@ -460,6 +460,8 @@ namespace OpenRA
 
 		public bool PlayNotification(Ruleset rules, Player player, string type, string notification, string variant)
 		{
+			if (Game.IsHeadless) return false;
+
 			ArgumentNullException.ThrowIfNull(rules);
 
 			if (type == null || notification == null)

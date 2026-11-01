@@ -1,0 +1,9 @@
+Player:
+	ExternalBotBridge@RLAGENT:
+		Name: bot-rl-agent.name
+		Type: rl-agent
+		Port: 9999
+		ObservationInterval: 9999
+	ModularBot@DummyAI:
+		Name: bot-dummy-ai.name
+		Type: dummy

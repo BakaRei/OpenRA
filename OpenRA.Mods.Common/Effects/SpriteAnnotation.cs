@@ -26,14 +26,20 @@ namespace OpenRA.Mods.Common.Effects
 			this.palette = palette;
 			this.pos = pos;
 			anim = new Animation(world, image);
-			anim.PlayThen(sequence, () => world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); }));
-			world.ScreenMap.Add(this, pos, anim.Image);
+			if (Game.IsHeadless)
+				anim.PlayThen(sequence, () => world.AddFrameEndTask(w => w.Remove(this)));
+			else
+			{
+				anim.PlayThen(sequence, () => world.AddFrameEndTask(w => { w.Remove(this); w.ScreenMap.Remove(this); }));
+				world.ScreenMap.Add(this, pos, anim.Image);
+			}
 		}
 
 		void IEffect.Tick(World world)
 		{
 			anim.Tick();
-			world.ScreenMap.Update(this, pos, anim.Image);
+			if (!Game.IsHeadless)
+				world.ScreenMap.Update(this, pos, anim.Image);
 		}
 
 		IEnumerable<IRenderable> IEffect.Render(WorldRenderer wr) { yield break; }

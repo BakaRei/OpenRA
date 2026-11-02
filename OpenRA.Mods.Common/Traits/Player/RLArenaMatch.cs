@@ -174,9 +174,9 @@ namespace OpenRA.Mods.Common.Traits
 
 			return OnGameThread(() =>
 			{
-				// Order-based unpause is recorded in the replay; local unpause takes effect immediately.
+				// Unpause through the order stream only, so live play and replay resume on the same
+				// net frame. A local unpause is not recorded and makes replays desync.
 				world.SetPauseState(false);
-				world.SetLocalPauseState(false);
 				RLEventLog.Emit(world.WorldTick, "match_started");
 				Log.Write("rl-bridge", $"Arena match started at tick {world.WorldTick}");
 				return new RLProto.MatchControlResponse { Ok = true, Message = message, Tick = world.WorldTick };

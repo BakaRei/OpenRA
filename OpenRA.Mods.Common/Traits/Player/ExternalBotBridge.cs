@@ -284,11 +284,12 @@ namespace OpenRA.Mods.Common.Traits
 
 				// One pause order for the whole match. Later bots must not queue more,
 				// or they would re-pause the game after StartMatch.
-				if (!world.Paused)
-				{
-					world.SetLocalPauseState(true);
+				// Pause through the order stream only. A local pause is not recorded, so a replay
+				// would run unpaused until the order arrives and desync at frame 1 (the pause
+				// flag is part of the sync hash via DebugPauseState). The world runs for the
+				// order latency (a few ticks) before the gate takes hold; no agent is acting yet.
+				if (!world.PredictedPaused)
 					world.SetPauseState(true);
-				}
 
 				RLArenaMatch.Attach(world);
 			}
